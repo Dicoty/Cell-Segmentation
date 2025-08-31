@@ -1,3 +1,6 @@
-之前的Cell-detection东西太杂了，这里只关注细胞分割，使用较新的模型
-文件标注使用labelme，之后通过dataset_convert里的工具转换成各模型可以训练的格式
-cellpose训练的模型默认存在models下
+之前的Cell-detection东西太杂了，这里只关注细胞分割，使用较新的模型。主要写了格式装换的代码，其他地方大多是调包完了对着
+官方的例子抄。
+
+文件标注使用labelme，之后通过dataset_convert里的工具转换成各模型可以训练的格式，dataset_convert中的代码运行在labelme环境下。
+
+cellpose训练的模型权重默认存在models里。

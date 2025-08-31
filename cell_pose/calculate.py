@@ -5,7 +5,7 @@ import os
 import pandas as pd
 # 要运行还要下载openpyxl库
 
-# 图片和标注文件的文件夹，手动输入
+# 图片和npy标注文件的文件夹，手动输入
 file_folder = r"C:\somefiles\cellimage\train"
 # 图片格式，手动输入
 img_extension = ".jpg"

@@ -21,8 +21,8 @@ if not Path(train_dir).exists():
 test_dir = ""
 
 # *** change to your mask extension // 文件扩展名 ***
-masks_ext = "_seg.npy"
-# ^ assumes images from Cellpose GUI, if labels are tiffs, then "_masks.tif"
+masks_ext = "_masks"
+# ^ assumes images from Cellpose GUI, if labels are tiffs, then "_masks"
 
 # get files
 output = io.load_train_test_data(train_dir, test_dir, mask_filter=masks_ext)
