@@ -1,9 +1,13 @@
 from PySide6.QtWidgets import (QApplication, QWidget, QMainWindow, QMenu, QFileDialog, QLabel, 
-                               QVBoxLayout, QToolBar, QSizePolicy, QPlainTextEdit)
+                               QVBoxLayout, QToolBar, QSizePolicy, QPlainTextEdit, QSlider, QHBoxLayout,
+                               QFrame)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PIL import Image, ImageQt
 from utils import np2mask, sub_img
+from littlewindow import saveWindow
+
+# 控件的绑定方法命名格式为下划线分隔首字母大写，功能性方法命名为下划线分隔纯小写
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -19,6 +23,12 @@ class MainWindow(QMainWindow):
         # 创建中心部件
         centralWidget = self.creat_central_widget()
         self.setCentralWidget(centralWidget)
+
+        # 重要变量
+        self.img = None
+        self.img_with_mask = None
+        self.img_sub = None
+        self.opaque = 0.6
         
 
         self.bind()
@@ -93,6 +103,22 @@ class MainWindow(QMainWindow):
         self.lbShowImg.setAlignment(Qt.AlignCenter)
         self.lbShowImg.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
+        # 调整模糊度的滑条
+        layoutslider = QHBoxLayout()
+        layoutslider.addWidget(QLabel('透明度:'))
+        self.opaqueSlider = QSlider(Qt.Orientation.Horizontal)
+        self.opaqueSlider.setRange(0, 100)
+        self.opaqueSlider.setValue(50)
+        self.opaqueSlider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.opaqueSlider.setTickInterval(10)
+        self.opaqueSlider.valueChanged.connect(self.update_alpha)
+        layoutslider.addWidget(self.opaqueSlider)
+
+        sliderWidget = QFrame()
+        sliderWidget.setFrameStyle(QFrame.Box | QFrame.Plain)  # 设置为矩形边框
+        sliderWidget.setLineWidth(1)  # 设置边框线宽
+        sliderWidget.setLayout(layoutslider)
+
         # 信息显示文本框
         self.infoTextEdit = QPlainTextEdit()
         self.infoTextEdit.setMaximumHeight(100)
@@ -100,11 +126,30 @@ class MainWindow(QMainWindow):
 
         # 添加部件到布局
         self.mainlayout.addWidget(self.lbShowImg)
-        self.mainlayout.addWidget(self.infoTextEdit)
+        self.mainlayout.addWidget(sliderWidget)
+        self.mainlayout.addWidget(self.infoTextEdit)        
 
         central_widget.setLayout(self.mainlayout)
 
         return central_widget
+    
+    def update_alpha(self, value):
+        """
+        更新alpha透明度并刷新显示
+        """
+        self.opaque = value / 100.0
+        if self.imgmask is not None:
+            self.imgmaskcopy = self.imgmask.copy()
+            alpha = self.imgmaskcopy.split()[-1]          # 取出 α 通道
+            alpha = alpha.point(lambda p: int(p * self.opaque))  # 乘以 self.opaque
+            self.imgmaskcopy.putalpha(alpha)              # 把改过的 α 写回去
+
+            # 重新合成图像
+            self.img_with_mask = self.img.copy().convert('RGBA')
+            self.img_with_mask.paste(self.imgmaskcopy, (0, 0), self.imgmaskcopy)
+            # 刷新显示
+            self.show_img(self.img_with_mask)
+                
         
     def Open_File(self):
         print('打开文件')
@@ -118,14 +163,37 @@ class MainWindow(QMainWindow):
         # 展示图片
         self.show_img(self.img)
 
-    def Save_File(self):
+    def Save_File(self, save_type):
         """
-        将当前展示的图片保存,先这样写,之后再改改
+        保存图片，点击按钮后弹出窗口选择保存方式
         """
-        self.current_img = self.lbShowImg.pixmap()
-        save_path = QFileDialog.getSaveFileName(self, '保存图片', './', '图片文件(*.png *.jpg)')[0]
-        self.current_img.save(save_path)
-        self.infoTextEdit.appendPlainText(f'已保存当前文件于：{save_path}')
+        # 创建保存子窗口
+        self.save_window = saveWindow(self)
+
+        # 连接子窗口的信号到处理函数
+        self.save_window.saveSignal.connect(self.handle_save_signal)
+        self.save_window.show()
+
+    
+    def handle_save_signal(self, save_type):
+        if save_type == 'origin':
+            self.infoTextEdit.appendPlainText(f"原图就在： {self.img_path}，还需要保存吗？")
+        elif save_type == 'mask':
+            if self.img_with_mask is None:  # 如果没有导入mask，则提示导入mask
+                self.infoTextEdit.appendPlainText('请导入Mask')
+                return
+            else:
+                save_path = QFileDialog.getSaveFileName(self, '保存图片', './', '图片文件(*.png *.jpg *.jpeg *.bmp)')[0]
+                self.img_with_mask.save(save_path)
+                self.infoTextEdit.appendPlainText(f"保存重叠mask后的图： {self.img_path}")
+        elif save_type == 'crop':
+            if self.img_sub is None:  # 如果没有裁切，则提示裁切
+                self.infoTextEdit.appendPlainText('请裁切图片')
+                return
+            else:
+                save_path = QFileDialog.getSaveFileName(self, '保存图片', './', '图片文件(*.png *.jpg *.jpeg *.bmp)')[0]
+                self.img_sub.save(save_path)
+                self.infoTextEdit.appendPlainText(f"保存裁切图： {self.img_path}")
 
     def Import_Mask(self):
         print('导入Mask')
@@ -139,20 +207,12 @@ class MainWindow(QMainWindow):
             print('未选择文件')
             self.infoTextEdit.appendPlainText('未选择文件')
 
-        alpha = self.imgmask.split()[-1]          # 取出 α 通道
-        alpha = alpha.point(lambda p: int(p * 0.4))  # 乘以 0.4
-        self.imgmask.putalpha(alpha)              # 把改过的 α 写回去
-
-        self.img_with_mask = self.img.copy().convert('RGBA')
-        self.img_with_mask.paste(self.imgmask, (0, 0), self.imgmask)
-
-        self.show_img(self.img_with_mask)
-
+        self.update_alpha(self.opaque * 100)
     def Sub_Img(self):
         print('裁剪图片')
         self.infoTextEdit.appendPlainText('裁剪图片')
-        self.sub_img = sub_img(self.img, self.imgmask)
-        self.show_img(self.sub_img)
+        self.img_sub = sub_img(self.img, self.imgmask)
+        self.show_img(self.img_sub)
 
     def Predict(self):
         self.infoTextEdit.appendPlainText('预测中……')
@@ -166,19 +226,12 @@ class MainWindow(QMainWindow):
         self.infoTextEdit.appendPlainText('预测完成')
         self.imgmask = np2mask(mask)
 
-        alpha = self.imgmask.split()[-1]          # 取出 α 通道
-        alpha = alpha.point(lambda p: int(p * 0.6))  # 乘以 0.4
-        self.imgmask.putalpha(alpha)              # 把改过的 α 写回去
-
-        self.img_with_mask = self.img.copy().convert('RGBA')
-        self.img_with_mask.paste(self.imgmask, (0, 0), self.imgmask)
-
-        self.show_img(self.img_with_mask)
-        
+        self.update_alpha(self.opaque * 100)
         
     def Select_Model(self):
         self.model_path = QFileDialog.getOpenFileName(self, '选择模型文件', './', '权重文件(*)')[0]
         self.infoTextEdit.appendPlainText('模型路径：' + self.model_path)
+
     def show_img(self, img):
 
         # 获取 QLabel 的尺寸
