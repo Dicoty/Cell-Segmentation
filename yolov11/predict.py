@@ -84,9 +84,12 @@ def yolo_predict(img_path, model_path):
 
     return tif_mask_resized_np
 
-# image = r'C:\somefiles\Cell-Segmentation\2.jpg'
-# model = r"C:\somefiles\weights_and_dataset\yolo_weights\train\weights\best.pt"
+if __name__ == "__main__":
 
-# tif_mask = yolo_predict(image, model)
-# mask_rgba = np2mask(tif_mask)
-# mask_rgba.show()
+    image = r"D:\20251012\20251012-fixedA375-30ugPaint_JL_2\1.tif"
+    model = r"C:\somefiles\weights_and_dataset\yolo_weights\train\weights\best.pt"
+
+    tif_mask = yolo_predict(image, model)
+    np.save(r"D:\20251012\JL2_mask", tif_mask)
+    mask_rgba = np2mask(tif_mask)
+    mask_rgba.show()
