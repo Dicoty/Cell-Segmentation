@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QApplication, QWidget, QMainWindow, QMenu, QFileDialog, QLabel, 
                                QVBoxLayout, QToolBar, QSizePolicy, QPlainTextEdit, QSlider, QHBoxLayout,
-                               QFrame, QStackedWidget, QPushButton)
+                               QFrame, QStackedWidget, QPushButton, QDialog)
 from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -9,7 +9,9 @@ import numpy as np
 from PIL import Image, ImageQt
 from utils import np2mask, sub_img, calculate
 from littlewindow import saveWindow
-from thread import PredictThread
+from predict_thread import PredictThread
+from batch_thread import BatchProcessThread
+from batch_config_dialog import BatchConfigDialog
 import qdarkstyle
 from qt_material import apply_stylesheet
 
@@ -68,6 +70,7 @@ class MainWindow(QMainWindow):
         self.predict.triggered.connect(self.Predict)
         self.calculate.triggered.connect(self.Calculate)
         self.openVideo.triggered.connect(self.Open_Video)
+        self.batchProcess.triggered.connect(self.Batch_Process)
 
     def create_menu(self):
         """
@@ -80,11 +83,14 @@ class MainWindow(QMainWindow):
         self.openVideo = QAction('导入视频')
         self.saveFile = QAction('保存')
         self.importMask = QAction('导入Mask')
+        self.batchProcess = QAction('批量SPR处理')
         self.fileMenu = QMenu('文件')
         self.fileMenu.addAction(self.openFile)
         self.fileMenu.addAction(self.openVideo)
         self.fileMenu.addAction(self.saveFile)
         self.fileMenu.addAction(self.importMask)
+        self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.batchProcess)
         self.menu.addMenu(self.fileMenu)
 
         # 模型菜单
@@ -125,6 +131,12 @@ class MainWindow(QMainWindow):
 
         # 计算按钮
         self.toolbar.addAction(self.calculate)
+
+        # 分隔符
+        self.toolbar.addSeparator()
+
+        # 批量处理按钮
+        self.toolbar.addAction(self.batchProcess)
 
     def creat_seg_central_widget(self):
         """
@@ -324,8 +336,14 @@ class MainWindow(QMainWindow):
         """
         处理保存信号
         """
-        if save_type == 'origin':
-            self.infoTextEdit.appendPlainText(f"原图就在： {self.img_path}，还需要保存吗？")
+        if save_type == 'npy':
+            if self.np_mask is None:
+                self.infoTextEdit.appendPlainText('请预测Mask')
+                return
+            else:
+                save_path = QFileDialog.getSaveFileName(self, '保存文件', './', 'npy文件(*.npy)')[0]
+                np.save(save_path, self.np_mask)
+                self.infoTextEdit.appendPlainText(f"保存Mask: {save_path}")               
         elif save_type == 'mask':
             if self.img_with_mask is None:  # 如果没有导入mask，则提示导入mask
                 self.infoTextEdit.appendPlainText('请导入Mask')
@@ -461,6 +479,89 @@ class MainWindow(QMainWindow):
         if self.media_player:
             self.media_player.stop()
 
+    def Batch_Process(self):
+        """
+        批量SPR对齐+信号提取处理
+        """
+        # 显示配置对话框
+        dialog = BatchConfigDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            config = dialog.get_config()
+            if config:
+                self.start_batch_processing(config)
+    
+    def start_batch_processing(self, config):
+        """
+        启动批量处理线程
+        """
+        # 清空信息显示
+        self.infoTextEdit.clear()
+        self.infoTextEdit.appendPlainText("=" * 50)
+        self.infoTextEdit.appendPlainText("批量SPR对齐+信号提取处理")
+        self.infoTextEdit.appendPlainText("=" * 50)
+        
+        # 创建并启动批量处理线程
+        self.batch_thread = BatchProcessThread(config)
+        
+        # 连接信号
+        self.batch_thread.progress_signal.connect(self.on_batch_progress)
+        self.batch_thread.finished_signal.connect(self.on_batch_finished)
+        self.batch_thread.error_signal.connect(self.on_batch_error)
+        
+        # 禁用批量处理按钮，防止重复点击
+        self.batchProcess.setEnabled(False)
+        
+        # 启动线程
+        self.batch_thread.start()
+    
+    def on_batch_progress(self, message):
+        """
+        处理批量处理进度信息
+        """
+        self.infoTextEdit.appendPlainText(message)
+        # 自动滚动到底部
+        self.infoTextEdit.verticalScrollBar().setValue(
+            self.infoTextEdit.verticalScrollBar().maximum()
+        )
+    
+    def on_batch_finished(self, result_info):
+        """
+        批量处理完成
+        """
+        self.infoTextEdit.appendPlainText("\n" + "=" * 50)
+        self.infoTextEdit.appendPlainText("处理完成！")
+        self.infoTextEdit.appendPlainText("=" * 50)
+        
+        # 重新启用批量处理按钮
+        self.batchProcess.setEnabled(True)
+        
+        # 显示结果信息对话框
+        from PySide6.QtWidgets import QMessageBox
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("批量处理完成")
+        msg.setText(f"批量处理已成功完成！\n\n"
+                   f"Excel文件: {result_info['excel_path']}\n"
+                   f"总帧数: {result_info['total_frames']}\n"
+                   f"掩膜数量: {result_info['total_masks']}")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+    
+    def on_batch_error(self, error_msg):
+        """
+        批量处理出错
+        """
+        self.infoTextEdit.appendPlainText("\n" + "=" * 50)
+        self.infoTextEdit.appendPlainText("处理出错！")
+        self.infoTextEdit.appendPlainText("=" * 50)
+        
+        # 重新启用批量处理按钮
+        self.batchProcess.setEnabled(True)
+        
+        # 显示错误对话框
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(self, "批量处理错误", error_msg)
+
 
 if __name__ == '__main__':
     app = QApplication([])
@@ -468,4 +569,3 @@ if __name__ == '__main__':
     window = MainWindow()
     window.show()
     app.exec()
-

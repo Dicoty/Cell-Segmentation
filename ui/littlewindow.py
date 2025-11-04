@@ -11,7 +11,7 @@ class saveWindow(QWidget):
         self.setWindowTitle('保存图片')
         self.resize_and_center()
         
-        self.btn1 = QPushButton('保存原图')
+        self.btn1 = QPushButton('保存npy格式的mask')
         self.btn2 = QPushButton('保存重叠mask后的图')
         self.btn3 = QPushButton('保存裁切图')
         self.btn4 = QPushButton('取消')
@@ -30,7 +30,7 @@ class saveWindow(QWidget):
         self.bind()
 
     def bind(self):
-        self.btn1.clicked.connect(lambda: self.saveSignal.emit('origin'))
+        self.btn1.clicked.connect(lambda: self.saveSignal.emit('npy'))
         self.btn2.clicked.connect(lambda: self.saveSignal.emit('mask'))
         self.btn3.clicked.connect(lambda: self.saveSignal.emit('crop'))
         self.btn4.clicked.connect(self.close)
